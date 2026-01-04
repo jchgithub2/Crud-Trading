@@ -1,0 +1,195 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  trades      Trade[]
+  strategies  Strategy[]
+  emotions    EmotionLog[]
+  journalEntries JournalEntry[]
+}
+
+model Trade {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  
+  symbol        String
+  tradeType     String
+  entryPrice    Float
+  exitPrice     Float
+  quantity      Float
+  
+  entryDate     DateTime
+  exitDate      DateTime
+  
+  pnl           Float
+  pnlPercentage Float
+  fees          Float?
+  
+  strategyId    String?
+  strategy      Strategy? @relation(fields: [strategyId], references: [id])
+  marketCondition String?
+  timeframe     String?
+  
+  notes         String?
+  screenshot    String?
+  tags          String[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  emotions      EmotionLog[]
+}
+
+model Strategy {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  name        String
+  description String?
+  winRate     Float?
+  profitFactor Float?
+  trades      Trade[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model EmotionLog {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  tradeId     String?
+  trade       Trade?   @relation(fields: [tradeId], references: [id])
+  
+  emotion     String
+  intensity   Int
+  notes       String?
+  
+  createdAt   DateTime @default(now())
+}
+
+model JournalEntry {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  
+  title       String
+  content     String
+  date        DateTime @default(now())
+  tags        String[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+EOFmkdir -p prisma
+
+cat > prisma/schema.prisma << 'EOF'
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  trades      Trade[]
+  strategies  Strategy[]
+  emotions    EmotionLog[]
+  journalEntries JournalEntry[]
+}
+
+model Trade {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  
+  symbol        String
+  tradeType     String
+  entryPrice    Float
+  exitPrice     Float
+  quantity      Float
+  
+  entryDate     DateTime
+  exitDate      DateTime
+  
+  pnl           Float
+  pnlPercentage Float
+  fees          Float?
+  
+  strategyId    String?
+  strategy      Strategy? @relation(fields: [strategyId], references: [id])
+  marketCondition String?
+  timeframe     String?
+  
+  notes         String?
+  screenshot    String?
+  tags          String[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  emotions      EmotionLog[]
+}
+
+model Strategy {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  name        String
+  description String?
+  winRate     Float?
+  profitFactor Float?
+  trades      Trade[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model EmotionLog {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  tradeId     String?
+  trade       Trade?   @relation(fields: [tradeId], references: [id])
+  
+  emotion     String
+  intensity   Int
+  notes       String?
+  
+  createdAt   DateTime @default(now())
+}
+
+model JournalEntry {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  
+  title       String
+  content     String
+  date        DateTime @default(now())
+  tags        String[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
