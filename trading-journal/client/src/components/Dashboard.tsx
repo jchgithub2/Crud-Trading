@@ -35,10 +35,12 @@ const Dashboard: React.FC<DashboardProps> = ({ trades = [], stats = {} }) => {
 
     // Mejores y peores trades
     const bestTrades = [...safeTrades]
+        .filter(trade => (Number(trade.pnl) || 0) > 0)  // Solo operaciones ganadoras
         .sort((a, b) => (Number(b.pnl) || 0) - (Number(a.pnl) || 0))
         .slice(0, 3);
 
     const worstTrades = [...safeTrades]
+        .filter(trade => (Number(trade.pnl) || 0) < 0)  // Solo operaciones perdedoras
         .sort((a, b) => (Number(a.pnl) || 0) - (Number(b.pnl) || 0))
         .slice(0, 3);
 

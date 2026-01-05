@@ -31,6 +31,54 @@ const calculatePnL = (entry: number, exit: number, quantity: number, tradeType: 
   };
 };
 
+// FUNCIÓN CRÍTICA: Convertir datos de MySQL a formato frontend
+const formatTradeFromDB = (trade: any) => {
+  // Convertir tags de string CSV a array
+  let tagsArray: string[] = [];
+  if (trade.tags) {
+    if (typeof trade.tags === 'string') {
+      tagsArray = trade.tags.split(',').filter((tag: string) => tag.trim() !== '');
+    } else if (Array.isArray(trade.tags)) {
+      tagsArray = trade.tags;
+    }
+  }
+
+  // Formatear fechas a ISO string
+  const formatDateToISO = (dateValue: any): string | null => {
+    if (!dateValue) return null;
+    try {
+      const date = new Date(dateValue);
+      return isNaN(date.getTime()) ? null : date.toISOString();
+    } catch {
+      return null;
+    }
+  };
+
+  return {
+    id: trade.id,
+    symbol: trade.symbol,
+    tradeType: trade.trade_type,
+    entryPrice: Number(trade.entry_price),      // CONVERTIR A NÚMERO
+    exitPrice: Number(trade.exit_price),        // CONVERTIR A NÚMERO
+    quantity: Number(trade.quantity),
+    pnl: Number(trade.pnl),                     // CONVERTIR A NÚMERO
+    pnlPercentage: Number(trade.pnl_percentage), // CONVERTIR A NÚMERO
+    entryDate: formatDateToISO(trade.entry_date),
+    exitDate: formatDateToISO(trade.exit_date),
+    marketCondition: trade.market_condition,
+    timeframe: trade.timeframe,
+    strategy: trade.strategy,
+    notes: trade.notes,
+    tags: tagsArray,                           // ARRAY, NO STRING CSV
+    emotionalState: trade.emotional_state,
+    confidence: trade.confidence ? Number(trade.confidence) : null,
+    rating: trade.rating ? Number(trade.rating) : null,
+    // Campos opcionales para compatibilidad
+    createdAt: trade.created_at ? formatDateToISO(trade.created_at) : null,
+    updatedAt: trade.updated_at ? formatDateToISO(trade.updated_at) : null
+  };
+};
+
 // ========== RUTAS DE LA API ==========
 
 // 1. RAIZ - Información del API
@@ -67,7 +115,7 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// 3. OBTENER TODOS LOS TRADES
+// 3. OBTENER TODOS LOS TRADES - CORREGIDO
 app.get('/api/trades', async (req, res) => {
   try {
     const { page = '1', limit = '20', symbol, tradeType } = req.query;
@@ -91,7 +139,7 @@ app.get('/api/trades', async (req, res) => {
     query += ' ORDER BY entry_date DESC LIMIT ? OFFSET ?';
     params.push(limitNum, offset);
 
-    const [trades] = await pool.execute(query, params);
+    const [trades]: any = await pool.execute(query, params);
 
     // Contar total
     let countQuery = 'SELECT COUNT(*) as total FROM trades WHERE 1=1';
@@ -110,6 +158,9 @@ app.get('/api/trades', async (req, res) => {
     const [countResult]: any = await pool.execute(countQuery, countParams);
     const total = countResult[0].total;
 
+    // CONVERTIR CADA TRADE AL FORMATO CORRECTO
+    const formattedTrades = trades.map(formatTradeFromDB);
+
     res.json({
       success: true,
       count: total,
@@ -119,7 +170,7 @@ app.get('/api/trades', async (req, res) => {
         total: total,
         pages: Math.ceil(total / limitNum)
       },
-      data: trades
+      data: formattedTrades  // DATOS CONVERTIDOS
     });
   } catch (error) {
     console.error('Error fetching trades:', error);
@@ -130,7 +181,7 @@ app.get('/api/trades', async (req, res) => {
   }
 });
 
-// 4. OBTENER UN TRADE ESPECÍFICO
+// 4. OBTENER UN TRADE ESPECÍFICO - CORREGIDO
 app.get('/api/trades/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -143,9 +194,12 @@ app.get('/api/trades/:id', async (req, res) => {
       });
     }
 
+    // CONVERTIR EL TRADE AL FORMATO CORRECTO
+    const formattedTrade = formatTradeFromDB(rows[0]);
+
     res.json({
       success: true,
-      data: rows[0]
+      data: formattedTrade  // DATO CONVERTIDO
     });
   } catch (error) {
     console.error('Error fetching trade:', error);
@@ -156,7 +210,7 @@ app.get('/api/trades/:id', async (req, res) => {
   }
 });
 
-// 5. CREAR NUEVO TRADE
+// 5. CREAR NUEVO TRADE - MEJORADO
 app.post('/api/trades', async (req, res) => {
   try {
     const tradeData = req.body;
@@ -173,31 +227,50 @@ app.post('/api/trades', async (req, res) => {
       });
     }
 
+    // Asegurar que los números sean números
+    const entryPrice = parseFloat(tradeData.entryPrice);
+    const exitPrice = parseFloat(tradeData.exitPrice);
+    const quantity = parseFloat(tradeData.quantity);
+
     // Calcular P&L
     const { pnl, pnlPercentage } = calculatePnL(
-      tradeData.entryPrice,
-      tradeData.exitPrice,
-      tradeData.quantity,
+      entryPrice,
+      exitPrice,
+      quantity,
       tradeData.tradeType || 'LONG'
     );
+
+    // Procesar tags correctamente
+    let tagsValue = null;
+    if (tradeData.tags) {
+      if (Array.isArray(tradeData.tags)) {
+        tagsValue = tradeData.tags.join(',');
+      } else if (typeof tradeData.tags === 'string') {
+        tagsValue = tradeData.tags;
+      }
+    }
 
     // Preparar datos para MySQL
     const newTrade = {
       id: uuidv4(),
       symbol: tradeData.symbol,
       trade_type: tradeData.tradeType || 'LONG',
-      entry_price: parseFloat(tradeData.entryPrice),
-      exit_price: parseFloat(tradeData.exitPrice),
-      quantity: parseFloat(tradeData.quantity),
+      entry_price: entryPrice,
+      exit_price: exitPrice,
+      quantity: quantity,
       pnl: pnl,
       pnl_percentage: pnlPercentage,
-      entry_date: tradeData.entryDate || new Date().toISOString().slice(0, 19).replace('T', ' '),
-      exit_date: tradeData.exitDate || new Date().toISOString().slice(0, 19).replace('T', ' '),
+      entry_date: tradeData.entryDate
+        ? new Date(tradeData.entryDate).toISOString().slice(0, 19).replace('T', ' ')
+        : new Date().toISOString().slice(0, 19).replace('T', ' '),
+      exit_date: tradeData.exitDate
+        ? new Date(tradeData.exitDate).toISOString().slice(0, 19).replace('T', ' ')
+        : new Date().toISOString().slice(0, 19).replace('T', ' '),
       market_condition: tradeData.marketCondition || null,
       timeframe: tradeData.timeframe || null,
       strategy: tradeData.strategy || null,
       notes: tradeData.notes || null,
-      tags: tradeData.tags ? (Array.isArray(tradeData.tags) ? tradeData.tags.join(',') : tradeData.tags) : null,
+      tags: tagsValue,
       emotional_state: tradeData.emotionalState || null,
       confidence: tradeData.confidence ? parseInt(tradeData.confidence) : null,
       rating: tradeData.rating ? parseInt(tradeData.rating) : null
@@ -222,10 +295,13 @@ app.post('/api/trades', async (req, res) => {
 
     await pool.execute(query, params);
 
+    // Devolver el trade creado en formato frontend
+    const createdTrade = formatTradeFromDB(newTrade);
+
     res.status(201).json({
       success: true,
       message: '✅ Operación registrada exitosamente',
-      data: newTrade
+      data: createdTrade
     });
 
   } catch (error: any) {
@@ -238,7 +314,7 @@ app.post('/api/trades', async (req, res) => {
   }
 });
 
-// 6. ACTUALIZAR TRADE
+// 6. ACTUALIZAR TRADE - MEJORADO
 app.put('/api/trades/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -261,14 +337,26 @@ app.put('/api/trades/:id', async (req, res) => {
     let updatedPnLPercentage = existingTrade.pnl_percentage;
 
     if (tradeData.entryPrice || tradeData.exitPrice || tradeData.quantity || tradeData.tradeType) {
-      const entryPrice = tradeData.entryPrice || existingTrade.entry_price;
-      const exitPrice = tradeData.exitPrice || existingTrade.exit_price;
-      const quantity = tradeData.quantity || existingTrade.quantity;
+      const entryPrice = tradeData.entryPrice ? parseFloat(tradeData.entryPrice) : existingTrade.entry_price;
+      const exitPrice = tradeData.exitPrice ? parseFloat(tradeData.exitPrice) : existingTrade.exit_price;
+      const quantity = tradeData.quantity ? parseFloat(tradeData.quantity) : existingTrade.quantity;
       const tradeType = tradeData.tradeType || existingTrade.trade_type;
 
       const { pnl, pnlPercentage } = calculatePnL(entryPrice, exitPrice, quantity, tradeType);
       updatedPnL = pnl;
       updatedPnLPercentage = pnlPercentage;
+    }
+
+    // Procesar tags
+    let tagsValue = existingTrade.tags;
+    if (tradeData.tags !== undefined) {
+      if (Array.isArray(tradeData.tags)) {
+        tagsValue = tradeData.tags.join(',');
+      } else if (typeof tradeData.tags === 'string') {
+        tagsValue = tradeData.tags;
+      } else if (tradeData.tags === null) {
+        tagsValue = null;
+      }
     }
 
     // Preparar datos para actualización
@@ -286,7 +374,7 @@ app.put('/api/trades/:id', async (req, res) => {
       timeframe: tradeData.timeframe !== undefined ? tradeData.timeframe : existingTrade.timeframe,
       strategy: tradeData.strategy !== undefined ? tradeData.strategy : existingTrade.strategy,
       notes: tradeData.notes !== undefined ? tradeData.notes : existingTrade.notes,
-      tags: tradeData.tags !== undefined ? (Array.isArray(tradeData.tags) ? tradeData.tags.join(',') : tradeData.tags) : existingTrade.tags,
+      tags: tagsValue,
       emotional_state: tradeData.emotionalState !== undefined ? tradeData.emotionalState : existingTrade.emotional_state,
       confidence: tradeData.confidence !== undefined ? parseInt(tradeData.confidence) : existingTrade.confidence,
       rating: tradeData.rating !== undefined ? parseInt(tradeData.rating) : existingTrade.rating
@@ -312,10 +400,17 @@ app.put('/api/trades/:id', async (req, res) => {
 
     await pool.execute(query, params);
 
+    // Devolver el trade actualizado en formato frontend
+    const updatedTrade = {
+      ...updateData,
+      id: id
+    };
+    const formattedTrade = formatTradeFromDB(updatedTrade);
+
     res.json({
       success: true,
       message: '✅ Operación actualizada exitosamente',
-      data: { id, ...updateData }
+      data: formattedTrade
     });
 
   } catch (error: any) {
@@ -327,7 +422,7 @@ app.put('/api/trades/:id', async (req, res) => {
   }
 });
 
-// 7. ELIMINAR TRADE
+// 7. ELIMINAR TRADE (sin cambios necesarios)
 app.delete('/api/trades/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -352,13 +447,16 @@ app.delete('/api/trades/:id', async (req, res) => {
   }
 });
 
-// 8. ESTADÍSTICAS AVANZADAS
+// 8. ESTADÍSTICAS AVANZADAS - CORREGIDO
 app.get('/api/stats', async (req, res) => {
   try {
     // Obtener todos los trades
     const [trades]: any = await pool.execute('SELECT * FROM trades');
 
-    if (trades.length === 0) {
+    // CONVERTIR TODOS LOS TRADES
+    const formattedTrades = trades.map(formatTradeFromDB);
+
+    if (formattedTrades.length === 0) {
       return res.json({
         success: true,
         data: {
@@ -383,17 +481,17 @@ app.get('/api/stats', async (req, res) => {
       });
     }
 
-    const winningTrades = trades.filter((t: any) => t.pnl > 0);
-    const losingTrades = trades.filter((t: any) => t.pnl < 0);
+    const winningTrades = formattedTrades.filter((t: any) => t.pnl > 0);
+    const losingTrades = formattedTrades.filter((t: any) => t.pnl < 0);
 
     const stats = {
       summary: {
-        totalTrades: trades.length,
+        totalTrades: formattedTrades.length,
         winningTrades: winningTrades.length,
         losingTrades: losingTrades.length,
-        totalPnL: trades.reduce((sum: number, t: any) => sum + t.pnl, 0),
-        winRate: trades.length > 0
-          ? (winningTrades.length / trades.length) * 100
+        totalPnL: formattedTrades.reduce((sum: number, t: any) => sum + t.pnl, 0),
+        winRate: formattedTrades.length > 0
+          ? (winningTrades.length / formattedTrades.length) * 100
           : 0,
         avgWin: winningTrades.length > 0
           ? winningTrades.reduce((sum: number, t: any) => sum + t.pnl, 0) / winningTrades.length
@@ -407,12 +505,12 @@ app.get('/api/stats', async (req, res) => {
           : winningTrades.reduce((sum: number, t: any) => sum + t.pnl, 0)
       },
       performance: {
-        bestTrade: trades.length > 0 ? Math.max(...trades.map((t: any) => t.pnl)) : 0,
-        worstTrade: trades.length > 0 ? Math.min(...trades.map((t: any) => t.pnl)) : 0,
+        bestTrade: formattedTrades.length > 0 ? Math.max(...formattedTrades.map((t: any) => t.pnl)) : 0,
+        worstTrade: formattedTrades.length > 0 ? Math.min(...formattedTrades.map((t: any) => t.pnl)) : 0,
         largestWin: winningTrades.length > 0 ? Math.max(...winningTrades.map((t: any) => t.pnl)) : 0,
         largestLoss: losingTrades.length > 0 ? Math.min(...losingTrades.map((t: any) => t.pnl)) : 0
       },
-      bySymbol: trades.reduce((acc: any, trade: any) => {
+      bySymbol: formattedTrades.reduce((acc: any, trade: any) => {
         if (!acc[trade.symbol]) {
           acc[trade.symbol] = { trades: 0, pnl: 0, wins: 0 };
         }
@@ -436,7 +534,7 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
-// 9. DASHBOARD DATA
+// 9. DASHBOARD DATA - CORREGIDO
 app.get('/api/dashboard', async (req, res) => {
   try {
     const [recentTrades]: any = await pool.execute(
@@ -445,17 +543,21 @@ app.get('/api/dashboard', async (req, res) => {
 
     const [allTrades]: any = await pool.execute('SELECT * FROM trades');
 
+    // CONVERTIR LOS TRADES
+    const formattedRecentTrades = recentTrades.map(formatTradeFromDB);
+    const formattedAllTrades = allTrades.map(formatTradeFromDB);
+
     const dashboardData = {
-      recentTrades,
+      recentTrades: formattedRecentTrades,
       overview: {
-        totalTrades: allTrades.length,
-        totalPnL: allTrades.reduce((sum: number, t: any) => sum + t.pnl, 0),
-        winRate: allTrades.length > 0
-          ? (allTrades.filter((t: any) => t.pnl > 0).length / allTrades.length) * 100
+        totalTrades: formattedAllTrades.length,
+        totalPnL: formattedAllTrades.reduce((sum: number, t: any) => sum + t.pnl, 0),
+        winRate: formattedAllTrades.length > 0
+          ? (formattedAllTrades.filter((t: any) => t.pnl > 0).length / formattedAllTrades.length) * 100
           : 0
       },
       topSymbols: Object.entries(
-        allTrades.reduce((acc: any, trade: any) => {
+        formattedAllTrades.reduce((acc: any, trade: any) => {
           acc[trade.symbol] = (acc[trade.symbol] || 0) + trade.pnl;
           return acc;
         }, {})
@@ -507,8 +609,10 @@ ${dbConnected ? '✅ MYSQL: Conectado a XAMPP' : '❌ MYSQL: Error de conexión'
    • GET    /api/stats        → Estadísticas
    • GET    /api/dashboard    → Dashboard
 
-🔧 Para desarrollo frontend:
-   El frontend React puede conectarse a: http://localhost:${PORT}
+🔧 PARA FRONTEND:
+   Todos los números vienen como números (no strings)
+   Las fechas vienen en formato ISO
+   Los tags vienen como array (no CSV)
       `);
     });
 

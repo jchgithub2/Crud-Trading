@@ -2,11 +2,11 @@ export interface Trade {
     id: string;
     symbol: string;
     tradeType: 'LONG' | 'SHORT';
-    entryPrice: number | string;
-    exitPrice: number | string;
-    quantity: number | string;
-    pnl: number | string;
-    pnlPercentage: number | string;
+    entryPrice: number;
+    exitPrice: number;
+    quantity: number;
+    pnl: number;
+    pnlPercentage: number;
     entryDate: string;
     exitDate: string;
     marketCondition?: string;
